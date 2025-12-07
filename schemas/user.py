@@ -2,13 +2,13 @@ from pydantic import BaseModel
 
 # To create the user
 class UserSignup(BaseModel):
-    username: str
     name: str
-    hashed_password: str
+    username: str
+    password: str
     security_question: str
-    hashed_security_question: str
+    security_answer: str
 
-#To login the user
+#To log in the user
 class UserLogin(BaseModel):
     username: str
     password: str

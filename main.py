@@ -1,12 +1,19 @@
 from fastapi import FastAPI
+import uvicorn
 import psycopg2
 import jwt
 import json
 import os
 
+import core.security
+from api import auth
+
 ai_Model = True
 
+
+
 app = FastAPI()
+app.include_router(auth.router)
 
 @app.get("/")
 def read_root():
@@ -20,3 +27,7 @@ try:
     conn.close()
 except Exception as e:
     print(f"❌ ERROR: {e}")
+
+
+if __name__ == '__main__':
+    uvicorn.run (app, host='localhost' , port=8001)

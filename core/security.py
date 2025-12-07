@@ -11,7 +11,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 36000
 
 # For Password Hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 # --- 1. Create Token (With +5 Offset) ---
 def create_access_token(subject: Union[str, UUID], expires_delta: int = ACCESS_TOKEN_EXPIRE_MINUTES):
@@ -69,16 +69,15 @@ def verify_token(token: str):
 def hash_password(password: str):
     return pwd_context.hash(password)
 
-
 # Function to verify the password
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
 # --- TEST ---
-token = create_access_token(subject="ali_123")
-print(f"Token: {token}")
-
-# Just to show you the time it is using:
-pk_offset = timezone(timedelta(hours=5))
-print(f"Server Time used: {datetime.now(pk_offset)}")
+# token = create_access_token(subject="ali_123")
+# print(f"Token: {token}")
+#
+# # Just to show you the time it is using:
+# pk_offset = timezone(timedelta(hours=5))
+# print(f"Server Time used: {datetime.now(pk_offset)}")

@@ -1,11 +1,11 @@
 from pydantic import BaseModel
 
 class Camera_Detail(BaseModel):
-    name: str
-    location: str
-    video_url: str
-    description: str
-    privacy: bool
+    camera_id: str
+    username: str
+    user_id: str
+    jwt_token: str
+    is_private: bool
 
 class Create_Camera(BaseModel):
     user_id: str

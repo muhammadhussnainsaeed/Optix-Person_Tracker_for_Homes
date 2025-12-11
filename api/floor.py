@@ -63,8 +63,8 @@ def add_camera(user_data: floor.Create_Floor, db: Session = Depends(session.get_
 
     return {
         "message": "Floor Added successfully",
-        "name": result[0],
-        "video_url": result[1]
+        "id": result[0],
+        "title": result[1]
     }
 
 @router.post("/floor/add_floor_data")

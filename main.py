@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import uvicorn
 import psycopg2
-from api import auth,cameras,dashboard,floor,family,unwanted_person
+from api import auth,cameras,dashboard,floor,family,unwanted_person,logs
 
 ai_Model = True
 
@@ -12,6 +12,7 @@ app.include_router(dashboard.router)
 app.include_router(floor.router)
 app.include_router(family.router)
 app.include_router(unwanted_person.router)
+app.include_router(logs.router)
 
 @app.get("/")
 def read_root():

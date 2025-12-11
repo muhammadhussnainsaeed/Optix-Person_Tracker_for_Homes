@@ -1,11 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from db import session
 from core import security
-from schemas import camera, user
-
 router = APIRouter(tags=["Dashboard"])
 
 @router.get("/dashboard/summary")
@@ -17,15 +14,15 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
         raise HTTPException(status_code=400, detail="Verification Failed")
 
     query_counts = text("""
-                SELECT COUNT(*) FROM cameras WHERE user_id = :user_id
-                UNION ALL
-                SELECT COUNT(*) FROM family_members WHERE user_id = :user_id
-                UNION ALL
-                SELECT COUNT(*) FROM event_logs 
-                WHERE user_id = :user_id 
-                  AND event_type = 'unwanted_detected' 
-                  AND date(detected_at AT TIME ZONE 'Asia/Karachi') = CURRENT_DATE
-            """)
+            SELECT COUNT(*) FROM cameras WHERE user_id = :user_id 
+            UNION ALL
+            SELECT COUNT(*) FROM persons WHERE user_id = :user_id AND person_type = 'FAMILY'
+            UNION ALL
+            SELECT COUNT(*) FROM event_logs 
+            WHERE user_id = :user_id 
+              AND event_type = 'unwanted_detected' 
+              AND date(detected_at AT TIME ZONE 'Asia/Karachi') = CURRENT_DATE
+        """)
 
     result = db.execute(query_counts, {"user_id": user_id})
     result_count = result.fetchall()
@@ -35,23 +32,23 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     alert_count = result_count[2][0] if len(result_count) > 2 else 0
 
     query_recent_family = text("""
-                SELECT 
-                        el.log_id,
-                        el.detected_at,
-                        el.exited_at,
-                        el.snapshot_url, 
-                        fm.name AS person_name,
-                        c.location AS room_name,
-                        f.title AS floor_title
-                FROM event_logs el
-                    JOIN family_members fm ON el.family_member_id = fm.id
-                    LEFT JOIN cameras c ON el.camera_id = c.id     
-                    LEFT JOIN floors f ON c.floor_id = f.id       
-                        WHERE el.user_id = :user_id
-                            AND el.event_type = 'family_detected'
-                                ORDER BY el.detected_at DESC 
-                                        LIMIT 1
-            """)
+            SELECT 
+                el.id,                 
+                el.detected_at,
+                el.exited_at,
+                el.snapshot_url, 
+                p.name AS person_name,  
+                c.location AS room_name,
+                f.title AS floor_title
+            FROM event_logs el
+            JOIN persons p ON el.person_id = p.id
+            LEFT JOIN cameras c ON el.camera_id = c.id
+            LEFT JOIN floors f ON c.floor_id = f.id
+            WHERE el.user_id = :user_id
+              AND el.event_type = 'family_detected'
+            ORDER BY el.detected_at DESC 
+            LIMIT 1
+        """)
 
     result2 = db.execute(query_recent_family, {"user_id": user_id})
     result_family_log = result2.fetchone()
@@ -69,20 +66,17 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     else:
         family_data = None
 
-    # --- QUERY 3: GET TOP UNWANTED LOG ---
-    # Fetches the most recent intruder sighting with their alias
-        # --- QUERY 3: GET TOP UNWANTED LOG ---
     query_recent_alert = text("""
             SELECT 
-                el.log_id,
+                el.id,
                 el.detected_at,
                 el.exited_at,
                 el.snapshot_url, 
-                up.name AS person_name, 
+                p.name AS person_name, 
                 c.location AS room_name,
                 f.title AS floor_title
             FROM event_logs el
-            JOIN unwanted_persons up ON el.unwanted_person_id = up.id 
+            JOIN persons p ON el.person_id = p.id
             LEFT JOIN cameras c ON el.camera_id = c.id
             LEFT JOIN floors f ON c.floor_id = f.id
             WHERE el.user_id = :user_id

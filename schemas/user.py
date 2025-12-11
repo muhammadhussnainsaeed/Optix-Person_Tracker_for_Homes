@@ -20,8 +20,3 @@ class UserForgetPassword(BaseModel):
     security_answer: str
     new_password: str
 
-class UserVerification(BaseModel):
-    user_id: str
-    username: str
-    jwt_token: str
-

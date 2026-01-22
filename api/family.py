@@ -78,14 +78,12 @@ def add_family_member_with_photos(name: str = Form(...), relationship: str = For
         new_person_row = result.fetchone()
         new_person_relationship = new_person_row[0]
 
-        # --- Step 2: Save Images (Renamed by Member ID) ---
-        # We use 'enumerate' to get an index (0, 1, 2) to ensure unique names
+
         for index, file in enumerate(files):
-            # Logic: Rename file to {member_id}_{index}_{original_name}
-            # Example: "55_0_selfie.png"
+
             new_filename = f"{new_person_id}_{index}.png"
 
-            save_path = f"uploads/persons/{new_filename}"
+            save_path = f"media/persons/{new_filename}"
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             # Save to disk

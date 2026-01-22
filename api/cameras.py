@@ -16,7 +16,7 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
         raise HTTPException(status_code=400, detail="Verification Failed")
 
     query = text("""
-        SELECT id, name, description, is_private
+        SELECT id, name, description
         FROM cameras 
         WHERE user_id = :user_id
     """)

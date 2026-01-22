@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-DATABASE_URL = "postgresql+psycopg2://postgres:12345@192.168.100.8:5432/home_surveillance_db"
+DATABASE_URL = "postgresql+psycopg2://postgres:12345@127.0.0.1:5432/home_surveillance_db"
 
 # Create engine
 engine = create_engine(

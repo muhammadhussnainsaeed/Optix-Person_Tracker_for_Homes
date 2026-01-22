@@ -32,20 +32,22 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     alert_count = result_count[2][0] if len(result_count) > 2 else 0
 
     query_recent_family = text("""
-            SELECT 
+             SELECT 
                 el.id,                 
                 el.detected_at,
                 el.exited_at,
                 el.snapshot_url, 
-                p.name AS person_name,  
+                p.name AS person_name,
+				p_p.photo_url AS person_photo,
                 c.location AS room_name,
                 f.title AS floor_title
             FROM event_logs el
             JOIN persons p ON el.person_id = p.id
+			LEFT JOIN person_photos p_p ON p.id = p_p.person_id
             LEFT JOIN cameras c ON el.camera_id = c.id
             LEFT JOIN floors f ON c.floor_id = f.id
             WHERE el.user_id = :user_id
-              AND el.event_type = 'family_detected'
+              AND el.event_type = 'family_detected' AND p_p.is_primary= true
             ORDER BY el.detected_at DESC 
             LIMIT 1
         """)
@@ -53,34 +55,50 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     result2 = db.execute(query_recent_family, {"user_id": user_id})
     result_family_log = result2.fetchone()
 
+    query_object_interation = text("""
+            SELECT 
+                object_name,moved_at,
+                location_data
+            FROM object_interactions
+            WHERE event_log_id = :event_log_id
+        """)
+
     if result_family_log:
+
+        result4 = db.execute(query_object_interation, {"event_log_id": result_family_log[0]})
+        result_family_log_object = result4.mappings().all()
+
         family_data = {
             "id": str(result_family_log[0]),
             "detected_at": str(result_family_log[1]) if result_family_log[1] else None,
             "exited_at": str(result_family_log[2]) if result_family_log[2] else None,
             "snapshot_url": result_family_log[3] or "",
             "name": result_family_log[4] or "Unknown",
-            "room": result_family_log[5] or "Unknown Room",
-            "floor": result_family_log[6] or "Unknown Floor"
+            "person_photo": result_family_log[5] or "Unknown Person Photo",
+            "room": result_family_log[6] or "Unknown Room",
+            "floor": result_family_log[7] or "Unknown Floor",
+            "object_interation": result_family_log_object
         }
     else:
         family_data = None
 
     query_recent_alert = text("""
-            SELECT 
-                el.id,
+             SELECT 
+                el.id,                 
                 el.detected_at,
                 el.exited_at,
                 el.snapshot_url, 
-                p.name AS person_name, 
+                p.name AS person_name,
+				p_p.photo_url AS person_photo,
                 c.location AS room_name,
                 f.title AS floor_title
             FROM event_logs el
             JOIN persons p ON el.person_id = p.id
+			LEFT JOIN person_photos p_p ON p.id = p_p.person_id
             LEFT JOIN cameras c ON el.camera_id = c.id
             LEFT JOIN floors f ON c.floor_id = f.id
             WHERE el.user_id = :user_id
-              AND el.event_type = 'unwanted_detected'
+              AND el.event_type = 'unwanted_detected' AND p_p.is_primary= true
             ORDER BY el.detected_at DESC 
             LIMIT 1
         """)
@@ -89,14 +107,20 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     result_unwanted_log = result3.fetchone()
 
     if result_unwanted_log:
+
+        result5 = db.execute(query_object_interation, {"event_log_id": result_unwanted_log[0]})
+        result_unwanted_log_object = result5.mappings().all()
+
         unwanted_data = {
-            "id": str(result_unwanted_log[0]) or "No description",
+            "id": str(result_unwanted_log[0]) or "No id",
             "detected_at": str(result_unwanted_log[1]) if result_unwanted_log[1] else None,
             "exited_at": str(result_unwanted_log[2]) if result_unwanted_log[2] else None,
             "snapshot_url": result_unwanted_log[3] or "",
             "name": result_unwanted_log[4] or "Unknown",
-            "room": result_unwanted_log[5] or "Unknown Room",
-            "floor": result_unwanted_log[6] or "Unknown Floor"
+            "person_photo": result_unwanted_log[5] or "Unknown Person Photo",
+            "room": result_unwanted_log[6] or "Unknown Room",
+            "floor": result_unwanted_log[7] or "Unknown Floor",
+            "object_interation": result_unwanted_log_object
         }
     else:
         unwanted_data = None

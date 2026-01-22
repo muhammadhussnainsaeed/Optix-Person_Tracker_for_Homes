@@ -23,7 +23,7 @@ def login(user_data: user.UserLogin, db: Session = Depends(session.get_db)):
 
     # Check if user exists and password is correct
     if not user_row or not security.verify_password(user_data.password, user_row["hashed_password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid Credentials")
 
     # Generate JWT token
     token = security.create_access_token(subject_id=user_row["id"], subject_username= user_data.username)
@@ -37,8 +37,9 @@ def login(user_data: user.UserLogin, db: Session = Depends(session.get_db)):
     }
 
 #Sign_up API
-@router.post("/auth/sign_up", status_code=201)
+@router.post("/auth/sign_up")
 def register_user(user_data: user.UserSignup, db: Session = Depends(session.get_db)):
+
     # Check if username exists
     check_query = text("SELECT 1 FROM users WHERE username = :username")
     if db.execute(check_query, {"username": user_data.username}).fetchone():
@@ -123,4 +124,5 @@ def reset_password(user_data: user.UserForgetPassword, db: Session = Depends(ses
     except Exception:
         db.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
+
 

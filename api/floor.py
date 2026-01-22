@@ -32,7 +32,7 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
     }
 
 @router.post("/floor/add")
-def add_camera(user_data: floor.Create_Floor, db: Session = Depends(session.get_db)):
+def add_floor(user_data: floor.Create_Floor, db: Session = Depends(session.get_db)):
     token_verification = security.verify_token(user_data.jwt_token)
 
     if user_data.username != token_verification:
@@ -121,7 +121,7 @@ def update_floor_data(user_data: floor.UpdateFloorPlan, db: Session = Depends(se
     query = text("""
     UPDATE floor_plans 
         SET plan_data = :plan_data
-        WHERE id = :floor_plan_id
+        WHERE floor_id = :floor_plan_id
         RETURNING id
     """)
 
@@ -158,7 +158,7 @@ def get_floor_data(username: str,jwt_token: str, user_id: str, floor_plan_id: st
     query = text("""
         SELECT id, plan_data 
         FROM floor_plans
-        WHERE id = :fid 
+        WHERE floor_id = :fid 
     """)
 
     # 3. Execute (Synchronous - No await)
@@ -168,6 +168,7 @@ def get_floor_data(username: str,jwt_token: str, user_id: str, floor_plan_id: st
 
     row = result.fetchone()
 
+    print("hi",row)
     # 4. Handle Result
     if row is None:
         return {

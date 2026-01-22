@@ -45,9 +45,6 @@ def unmark_unwanted_person(user_data: unwanted_person.Unmark_Request,db: Session
     })
 
     # 4. Clean Up (Garbage Collection)
-    # If the 'old_unwanted_id' has NO other logs left in the system,
-    # it means that "Person" was a temporary glitch. We should delete them completely.
-    # This keeps your 'persons' table clean of random 'Unknown' entries.
 
     if old_unwanted_id:
         # Check if any logs still point to this unwanted ID

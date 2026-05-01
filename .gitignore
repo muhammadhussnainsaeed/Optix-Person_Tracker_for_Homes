@@ -2,8 +2,7 @@
 .venv/
 venv/
 env/
-media/events/
-ai_engine/
+
 # Python Cache (These are the compiled files making your untracked list huge)
 __pycache__/
 *.py[cod]
@@ -14,3 +13,7 @@ __pycache__/
 
 # OS Files
 .DS_Store
+
+# Other Big Files
+media/events/temp
+ai_engine/media/temp

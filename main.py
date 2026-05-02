@@ -2,19 +2,28 @@ import os
 import warnings
 
 # ==========================================
+# 0. TESTING TOGGLE
+# ==========================================
+# Set to False to bypass TensorFlow and AI Engine for instant API startup.
+# In a real environment, prefer using os.getenv("ENABLE_AI_ENGINE", "True") == "True"
+ENABLE_AI_ENGINE = False
+
+# ==========================================
 # 1. SUPPRESS TENSORFLOW & DEPRECATION NOISE
 # ==========================================
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-import tensorflow as tf
+if ENABLE_AI_ENGINE:
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
-try:
-    tf.config.set_visible_devices([], 'GPU')
-except Exception:
-    pass
+    import tensorflow as tf
+
+    try:
+        tf.config.set_visible_devices([], 'GPU')
+    except Exception:
+        pass
 
 # ==========================================
 # 2. STANDARD IMPORTS
@@ -32,9 +41,10 @@ from fastapi.middleware.cors import CORSMiddleware
 # Your App Routers
 from api import auth, cameras, dashboard, floor, family, unwanted_person, logs, settings
 
-# The AI Engine modules
-from ai_engine.face_recognition import FaceCache
-from ai_engine.orchestrator import camera_manager
+# Conditionally import your custom AI modules
+if ENABLE_AI_ENGINE:
+    from ai_engine.face_recognition import FaceCache
+    from ai_engine.orchestrator import camera_manager
 
 # ==========================================
 # 3. GLOBAL STATE & WEBSOCKET BRIDGE
@@ -84,20 +94,25 @@ async def lifespan(app: FastAPI):
     # 1. Start the Background Queue Watcher for WebSockets
     asyncio.create_task(watch_queue())
 
-    # 2. Sync database faces into memory
-    FaceCache.sync_from_db()
+    if ENABLE_AI_ENGINE:
+        print("🧠 Booting AI Engine...")
+        # 2. Sync database faces into memory
+        FaceCache.sync_from_db()
 
-    camera_manager.set_alert_queue(alert_queue)
+        camera_manager.set_alert_queue(alert_queue)
 
-    # 3. DELEGATE TO ORCHESTRATOR
-    camera_manager.sync_cameras()
+        # 3. DELEGATE TO ORCHESTRATOR
+        camera_manager.sync_cameras()
+    else:
+        print("⚡ FAST MODE ACTIVE: AI Engine and TensorFlow bypassed for testing.")
 
     yield  # The server is now running!
 
-    print("🛑 Shutting down server and releasing GPU memory...")
+    print("🛑 Shutting down server and releasing resources...")
 
-    # 4. Clean up AI Processes on shutdown
-    camera_manager.shutdown_all()
+    if ENABLE_AI_ENGINE:
+        # 4. Clean up AI Processes on shutdown
+        camera_manager.shutdown_all()
 
 
 # ==========================================
@@ -117,7 +132,6 @@ app.include_router(settings.router)
 app.mount("/media", StaticFiles(directory="media"), name="media")
 app.mount("/editor", StaticFiles(directory="static", html=True), name="editor")
 
-# --- FIX: Changed 'allow_method' to 'allow_methods' ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -128,7 +142,8 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"status": "Surveillance System Online", "version": "1.0"}
+    ai_status = "Online" if ENABLE_AI_ENGINE else "Offline"
+    return {"status": "Surveillance System Online", "ai_engine": ai_status, "version": "1.0"}
 
 
 @app.websocket("/ws/alerts")
@@ -139,9 +154,8 @@ async def websocket_alerts(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        print("📱 iOS App disconnected from WebSockets.")
+        print("📱 App disconnected from WebSockets.")
 
 
 if __name__ == '__main__':
-    # --- FIX: Added explicit lifespan="on" argument ---
     uvicorn.run("main:app", host='0.0.0.0', port=8888, reload=False, lifespan="on")

@@ -1,7 +1,10 @@
+import random
+
 from dateutil import parser
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from ai_engine import face_extractor
 
 from core import security
 from db import session
@@ -266,60 +269,130 @@ def log_unwanted_person_details(username: str, user_id: str, jwt_token: str, log
         "logs": all_logs_list
     }
 
-# @router.get("/logs/family_member/details")
-# def log_family_member_details(username: str, jwt_token: str, log_id: str, db: Session = Depends(session.get_db)):
-#
-#     token_verification = security.verify_token(jwt_token)
-#
-#     if username != token_verification:
-#         raise HTTPException(status_code=400, detail="Verification Failed")
-#
-#     query = text("""
-#             SELECT
-#                 el.id AS log_id,
-#                 el.detected_at,
-#                 el.exited_at,
-#                 el.snapshot_url,
-#                 p.id AS person_id,
-#                 p.name AS person_name,
-#                 fm.relationship,
-#                 ph.photo_url AS profile_photo,
-#                 c.location AS room_name,
-#                 f.title AS floor_title
-#             FROM event_logs el
-#             JOIN persons p ON el.person_id = p.id
-#             LEFT JOIN family_members fm ON p.id = fm.person_id
-#             LEFT JOIN person_photos ph ON p.id = ph.person_id AND ph.is_primary = TRUE
-#             LEFT JOIN cameras c ON el.camera_id = c.id
-#             LEFT JOIN floors f ON c.floor_id = f.id
-#             WHERE el.id = :lid
-#         """)
-#
-#     result = db.execute(query, {"lid": log_id})
-#     row = result.mappings().fetchone()
-#
-#     # 3. Handle Not Found
-#     if not row:
-#         raise HTTPException(status_code=404, detail="Log not found")
-#
-#     # 4. Return Structured Data
-#     return {
-#         "message": "Log details fetched successfully",
-#         "log_info": {
-#             "id": str(row["log_id"]),
-#             "detected_at": str(row["detected_at"]),
-#             "exited_at": str(row["exited_at"]) if row["exited_at"] else "Ongoing",
-#             "snapshot_url": row["snapshot_url"]
-#         },
-#         "person_info": {
-#             "id": str(row["person_id"]),
-#             "name": row["person_name"],
-#             "relationship": row["relationship"] or "Unknown",
-#             "profile_photo": row["profile_photo"] or ""
-#         },
-#         "location_info": {
-#             "room": row["room_name"] or "Unknown Room",
-#             "floor": row["floor_title"] or "Unknown Floor"
-#         }
-#     }
-#
+
+COLORS = ["Teal", "Azure", "Crimson", "Cobalt", "Amber", "Jade", "Onyx", "Ruby", "Silver", "Topaz"]
+ANIMALS = ["Falcon", "Panda", "Wolf", "Tiger", "Bear", "Eagle", "Fox", "Hawk", "Panther", "Leopard"]
+
+
+@router.post("/api/events/correction")
+def correct_event_identity(
+        payload: logs.IdentityCorrectionRequest,
+        db: Session = Depends(session.get_db)
+):
+    token_verification = security.verify_token(payload.jwt_token)
+
+    if payload.username != token_verification:
+        raise HTTPException(status_code=400, detail="Verification Failed")
+
+    # ==========================================
+    # FETCH EVENT VIA RAW SQL
+    # ==========================================
+    fetch_event_query = text("""
+        SELECT id, snapshot_url FROM event_logs WHERE id = :event_id
+    """)
+    event_res = db.execute(fetch_event_query, {"event_id": payload.event_id}).mappings().first()
+
+    if not event_res:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # =========================================================================
+    # LOGIC A: Assign to an Existing Person via Raw SQL (Cases 1A, 2A, 3, 4, 5A)
+    # =========================================================================
+    if not payload.is_new_person:
+        if not payload.correct_person_id:
+            raise HTTPException(status_code=400, detail="Must provide correct_person_id")
+
+        fetch_person_query = text("""
+            SELECT id, name, person_type FROM persons WHERE id = :person_id
+        """)
+        person_res = db.execute(fetch_person_query, {"person_id": str(payload.correct_person_id)}).mappings().first()
+
+        if not person_res:
+            raise HTTPException(status_code=404, detail="Selected person does not exist in the database.")
+
+        update_event_query = text("""
+            UPDATE event_logs 
+            SET person_id = :person_id, event_type = :event_type 
+            WHERE id = :event_id
+        """)
+        db.execute(update_event_query, {
+            "person_id": person_res["id"],
+            "event_type": f"{person_res['person_type'].lower()}_detected",
+            "event_id": payload.event_id
+        })
+
+        db.commit()
+        return {
+            "status": "success",
+            "message": f"Assigned Event to existing person: {person_res['name']}"
+        }
+
+    # =========================================================================
+    # LOGIC B: Auto-Create & Link a Brand-New Person via Raw SQL (Cases 1B, 2B, 5B)
+    # =========================================================================
+    else:
+
+
+        # Name Generation
+        color = random.choice(COLORS)
+        animal = random.choice(ANIMALS)
+        random_num = random.randint(100, 999)
+        generated_name = f"{color} {animal} {random_num}"
+
+        # Insert new person using raw SQL
+        insert_person_query = text("""
+            INSERT INTO persons (name, person_type, user_id)
+            VALUES (:name, :type, :user_id)
+            RETURNING id, name
+        """)
+        new_person_res = db.execute(insert_person_query, {
+            "name": generated_name,
+            "type": "UNWANTED",
+            "user_id": payload.user_id
+        }).mappings().first()
+
+        # Scan video to detect face
+        face_crop_path = face_extractor.extract_face_with_yolo(event_res["snapshot_url"], new_person_res["id"])
+
+        if not face_crop_path:
+            db.rollback()
+            raise HTTPException(
+                status_code=422,
+                detail="YOLO could not detect a face in this video to build a profile."
+            )
+
+        query_photo = text("""
+                        INSERT INTO person_photos (
+                            person_id, 
+                            photo_url,
+                            is_primary
+                        )
+                        VALUES (
+                            :person_id, 
+                            :photo_url,
+                            :is_primary
+                        )
+                    """)
+
+        db.execute(query_photo, {
+            "person_id": new_person_res["id"],
+            "photo_url": face_crop_path,
+            "is_primary": True
+        })
+
+        # Link event to the new person using raw SQL
+        update_event_with_new_person = text("""
+            UPDATE event_logs 
+            SET person_id = :person_id, event_type = 'unwanted_detected' 
+            WHERE id = :event_id
+        """)
+        db.execute(update_event_with_new_person, {
+            "person_id": new_person_res["id"],
+            "event_id": payload.event_id
+        })
+
+        db.commit()
+        return {
+            "status": "success",
+            "message": f"Automatically created profile: {new_person_res['name']} and updated Event."
+        }

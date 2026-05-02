@@ -19,33 +19,39 @@ def fetch_list(username: str,jwt_token: str, user_id: str, db: Session = Depends
 
     query = text("""
             SELECT 
-                el.id AS log_id,
-                el.detected_at,
-                el.exited_at,
-                el.snapshot_url,             -- e.g. "Unknown Person detected..."
-                p.name AS person_name,      -- e.g. "Unknown" or a name if you tagged them later
-				p_p.photo_url AS person_photo,
-                c.location AS room_name,
-                f.title AS floor_title,
-				(
-    SELECT json_agg(
-        json_build_object(
-            'object_name', oi.object_name, 
-            -- Cast to text to replace the 'T' with a space natively in PostgreSQL
-            'moved_at', oi.moved_at
+    el.id AS log_id, 
+    el.detected_at,
+    el.exited_at,
+    el.snapshot_url,
+
+    COALESCE(p.name, 'Identity Unconfirmed') AS person_name,
+    COALESCE(p_p.photo_url, '') AS person_photo,
+
+    c.location AS room_name,
+    f.title AS floor_title,
+
+    (
+        SELECT json_agg(
+            json_build_object(
+                'object_name', oi.object_name,
+                'moved_at', oi.moved_at
+            )
         )
-    )
-    FROM object_interactions oi
-    WHERE oi.event_log_id = el.id
-) AS interactions
-            FROM event_logs el
-            JOIN persons p ON el.person_id = p.id
-			LEFT JOIN person_photos p_p ON p.id = p_p.person_id
-            LEFT JOIN cameras c ON el.camera_id = c.id
-            LEFT JOIN floors f ON c.floor_id = f.id
-            WHERE el.user_id = :user_id
-              AND el.event_type = 'unwanted_detected' AND p_p.is_primary= true
-            ORDER BY el.detected_at DESC
+        FROM object_interactions oi
+        WHERE oi.event_log_id = el.id
+    ) AS interactions
+
+FROM event_logs el
+
+LEFT JOIN persons p ON el.person_id = p.id
+LEFT JOIN person_photos p_p ON p.id = p_p.person_id AND p_p.is_primary = true
+LEFT JOIN cameras c ON el.camera_id = c.id
+LEFT JOIN floors f ON c.floor_id = f.id
+
+WHERE el.user_id = :user_id
+  AND el.event_type = 'unwanted_detected'
+
+ORDER BY el.detected_at DESC
         """)
 
     result = db.execute(query, {"user_id": user_id})

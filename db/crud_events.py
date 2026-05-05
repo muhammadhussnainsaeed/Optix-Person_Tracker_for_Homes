@@ -23,13 +23,13 @@ def log_object_interaction(event_log_id: int, object_name: str):
     except Exception as e:
         print(f"❌ [DB] Error logging object interaction: {e}")
 
-def log_event_start(user_id: str, camera_id: str, person_id: str, event_type: str, video_path: str) -> str:
+def log_event_start(user_id: str, camera_id: str, person_id: str, event_type: str, video_path: str, detected_at: str) -> str:
     db: Session = SessionLocal()
     #event_id = str(uuid.uuid4())
     try:
         query = text("""
-            INSERT INTO event_logs (user_id, camera_id, person_id, event_type, snapshot_url)
-            VALUES (:uid, :cid, :pid, :evt, :path)
+            INSERT INTO event_logs (user_id, camera_id, person_id, event_type, snapshot_url, detected_at)
+            VALUES (:uid, :cid, :pid, :evt, :path, :detected_at)
             RETURNING id
         """)
         event_id = db.execute(query, {
@@ -37,7 +37,8 @@ def log_event_start(user_id: str, camera_id: str, person_id: str, event_type: st
             "cid": camera_id,
             "pid": person_id if person_id else None,
             "evt": event_type,
-            "path": video_path
+            "path": video_path,
+            "detected_at": detected_at
         })
         db.commit()
 

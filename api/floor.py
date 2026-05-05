@@ -141,198 +141,169 @@ def update_floor(user_data: Update_Floor, db: Session = Depends(session.get_db))
 
 @router.delete("/floor/delete")
 def delete_floor(user_data: Delete_Floor, db: Session = Depends(session.get_db)):
-   # 1. Verify JWT Token
-   token_verification = security.verify_token(user_data.jwt_token)
-   if user_data.username != token_verification:
-       raise HTTPException(status_code=401, detail="Verification Failed")
+    # 1. Verify JWT Token
+    token_verification = security.verify_token(user_data.jwt_token)
+    if user_data.username != token_verification:
+        raise HTTPException(status_code=401, detail="Verification Failed")
 
+    try:
+        # 0. Delete object_interactions linked to this floor's event logs
+        # We nest the subqueries: Interactions -> Logs -> Cameras -> Floor
+        db.execute(text("""
+                        DELETE
+                        FROM object_interactions
+                        WHERE event_log_id IN (SELECT id
+                                           FROM event_logs
+                                           WHERE camera_id IN (SELECT id FROM cameras WHERE floor_id = :f_id))
+                        """), {"f_id": user_data.floor_id})
 
-   try:
-       # 0. Delete object_interactions linked to this floor's event logs
-       # We nest the subqueries: Interactions -> Logs -> Cameras -> Floor
-       db.execute(text("""
-                       DELETE
-                       FROM object_interactions
-                       WHERE event_log_id IN (SELECT id
-                                          FROM event_logs
-                                          WHERE camera_id IN (SELECT id FROM cameras WHERE floor_id = :f_id))
-                       """), {"f_id": user_data.floor_id})
+        # A. Delete event_logs linked to cameras on this floor
+        db.execute(text("""
+                        DELETE
+                        FROM event_logs
+                        WHERE camera_id IN (SELECT id FROM cameras WHERE floor_id = :f_id)
+                        """), {"f_id": user_data.floor_id})
 
+        # B. Delete camera_links associated with this floor's cameras
+        db.execute(text("""
+                        DELETE
+                        FROM camera_links
+                        WHERE camera_id_from IN (SELECT id FROM cameras WHERE floor_id = :f_id)
+                           OR camera_id_to IN (SELECT id FROM cameras WHERE floor_id = :f_id)
+                        """), {"f_id": user_data.floor_id})
 
-       # A. Delete event_logs linked to cameras on this floor
-       db.execute(text("""
-                       DELETE
-                       FROM event_logs
-                       WHERE camera_id IN (SELECT id FROM cameras WHERE floor_id = :f_id)
-                       """), {"f_id": user_data.floor_id})
+        # C. Delete floor_plans associated with this floor
+        db.execute(text("DELETE FROM floor_plans WHERE floor_id = :f_id"), {"f_id": user_data.floor_id})
 
+        # D. Delete all cameras on this floor
+        db.execute(text("DELETE FROM cameras WHERE floor_id = :f_id"), {"f_id": user_data.floor_id})
 
-       # B. Delete camera_links associated with this floor's cameras
-       db.execute(text("""
-                       DELETE
-                       FROM camera_links
-                       WHERE camera_id_from IN (SELECT id FROM cameras WHERE floor_id = :f_id)
-                          OR camera_id_to IN (SELECT id FROM cameras WHERE floor_id = :f_id)
-                       """), {"f_id": user_data.floor_id})
+        # E. Finally, delete the floor itself and verify ownership
+        result = db.execute(text("""
+                                 DELETE
+                                 FROM floors
+                                 WHERE id = :f_id
+                                   AND user_id = :u_id RETURNING id, title
+                                 """), {"f_id": user_data.floor_id, "u_id": user_data.user_id})
 
+        deleted_row = result.fetchone()
 
-       # C. Delete floor_plans associated with this floor
-       db.execute(text("DELETE FROM floor_plans WHERE floor_id = :f_id"), {"f_id": user_data.floor_id})
+        # Verify if the floor actually existed and was owned by the user
+        if not deleted_row:
+            db.rollback()
+            raise HTTPException(status_code=404, detail="Floor not found or unauthorized")
 
+        db.commit()
+        return {
+            "message": "Floor and all associated cameras, logs, and plans deleted successfully",
+            "id": deleted_row[0],
+            "title": deleted_row[1]
+        }
 
-       # D. Delete all cameras on this floor
-       db.execute(text("DELETE FROM cameras WHERE floor_id = :f_id"), {"f_id": user_data.floor_id})
-
-
-       # E. Finally, delete the floor itself and verify ownership
-       result = db.execute(text("""
-                                DELETE
-                                FROM floors
-                                WHERE id = :f_id
-                                  AND user_id = :u_id RETURNING id, title
-                                """), {"f_id": user_data.floor_id, "u_id": user_data.user_id})
-
-
-       deleted_row = result.fetchone()
-
-
-       # Verify if the floor actually existed and was owned by the user
-       if not deleted_row:
-           db.rollback()
-           raise HTTPException(status_code=404, detail="Floor not found or unauthorized")
-
-
-       db.commit()
-       return {
-           "message": "Floor and all associated cameras, logs, and plans deleted successfully",
-           "id": deleted_row[0],
-           "title": deleted_row[1]
-       }
-
-
-   except Exception as e:
-       db.rollback()
-       raise HTTPException(status_code=500, detail=f"Transaction failed: {str(e)}")
-
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Transaction failed: {str(e)}")
 
 @router.post("/floor/add_floor_data")
 def add_floor_data(user_data: floor.CreateFloorPlan, db: Session = Depends(session.get_db)):
-   token_verification = security.verify_token(user_data.jwt_token)
+    token_verification = security.verify_token(user_data.jwt_token)
 
+    if user_data.username != token_verification:
+        raise HTTPException(status_code=400, detail="Verification Failed")
 
-   if user_data.username != token_verification:
-       raise HTTPException(status_code=400, detail="Verification Failed")
+    json_data = json.dumps(user_data.plan_data)
+    query = text("""
+    INSERT INTO floor_plans (
+            floor_id, 
+            plan_data
+        )
+        VALUES (
+            :floor_id, 
+            :plan_data
+        )
+        RETURNING id
+    """)
 
+    result = db.execute(query, {
+        "floor_id": user_data.floor_id,
+        "plan_data": json_data
+    })
 
-   json_data = json.dumps(user_data.plan_data)
-   query = text("""
-   INSERT INTO floor_plans (
-           floor_id,
-           plan_data
-       )
-       VALUES (
-           :floor_id,
-           :plan_data
-       )
-       RETURNING id
-   """)
+    row = result.fetchone()
+    db.commit()
 
-
-   result = db.execute(query, {
-       "floor_id": user_data.floor_id,
-       "plan_data": json_data
-   })
-
-
-   row = result.fetchone()
-   db.commit()
-
-
-   return {
-       "message": "Floor plan created successfully!",
-       "id": row[0]
-   }
-
+    return {
+        "message": "Floor plan created successfully!",
+        "id": row[0]
+    }
 
 @router.put("/floor/update_floor_data")
 def update_floor_data(user_data: floor.UpdateFloorPlan, db: Session = Depends(session.get_db)):
-   token_verification = security.verify_token(user_data.jwt_token)
+    token_verification = security.verify_token(user_data.jwt_token)
 
+    if user_data.username != token_verification:
+        raise HTTPException(status_code=400, detail="Verification Failed")
 
-   if user_data.username != token_verification:
-       raise HTTPException(status_code=400, detail="Verification Failed")
+    json_data = json.dumps(user_data.plan_data)
+    query = text("""
+    UPDATE floor_plans 
+        SET plan_data = :plan_data
+        WHERE floor_id = :floor_id
+        RETURNING id
+    """)
 
+    result = db.execute(query, {
+        "floor_id": user_data.floor_id,
+        "plan_data": json_data
+    })
 
-   json_data = json.dumps(user_data.plan_data)
-   query = text("""
-   UPDATE floor_plans
-       SET plan_data = :plan_data
-       WHERE floor_id = :floor_id
-       RETURNING id
-   """)
+    result = result.fetchone()
+    db.commit()
 
-
-   result = db.execute(query, {
-       "floor_id": user_data.floor_id,
-       "plan_data": json_data
-   })
-
-
-   result = result.fetchone()
-   db.commit()
-
-
-   return {
-       "message": "Floor Plan Updated successfully",
-       "id": result[0]
-   }
-
+    return {
+        "message": "Floor Plan Updated successfully",
+        "id": result[0]
+    }
 
 @router.get("/floor/get_floor_data")
 def get_floor_data(username: str,jwt_token: str, user_id: str, floor_id: str, db: Session = Depends(session.get_db)):
-   user_data = floor.GetFloorPlan(
-       username = username,
-       user_id = user_id,
-       jwt_token= jwt_token,
-       floor_plan_id= floor_id
-   )
-   # 1. Verify Token
-   try:
-       token_verification = security.verify_token(user_data.jwt_token)
-       if user_data.username != token_verification:
-           raise HTTPException(status_code=400, detail="Verification Failed")
-   except Exception:
-       raise HTTPException(status_code=401, detail="Invalid Token")
+    user_data = floor.GetFloorPlan(
+        username = username,
+        user_id = user_id,
+        jwt_token= jwt_token,
+        floor_id= floor_id
+    )
+    # 1. Verify Token
+    try:
+        token_verification = security.verify_token(user_data.jwt_token)
+        if user_data.username != token_verification:
+            raise HTTPException(status_code=400, detail="Verification Failed")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Token")
 
+    # 2. Define Query
+    query = text("""
+        SELECT plan_data 
+        FROM floor_plans
+        WHERE floor_id = :fid 
+    """)
 
-   # 2. Define Query
-   query = text("""
-       SELECT plan_data
-       FROM floor_plans
-       WHERE floor_id = :fid
-   """)
+    # 3. Execute (Synchronous - No await)
+    result = db.execute(query, {
+        "fid": user_data.floor_id
+    })
 
+    row = result.fetchone()
 
-   # 3. Execute (Synchronous - No await)
-   result = db.execute(query, {
-       "fid": user_data.floor_plan_id
-   })
+    # 4. Handle Result
+    if row is None:
+        return {
+            "message": "No plan found",
+            "plan": ""
+        }
 
-
-   row = result.fetchone()
-
-
-   #print("hi",row)
-   # 4. Handle Result
-   if row is None:
-       return {
-           "message": "No plan found",
-           "plan": ""
-       }
-
-
-   # 5. Return Data
-   return {
-       "message": "Floor Plan Fetched successfully",
-       "plan": json.dumps(row[0]) or {}
-   }
+    # 5. Return Data
+    return {
+        "message": "Floor Plan Fetched successfully",
+        "plan": json.dumps(row[0]) or {}
+    }

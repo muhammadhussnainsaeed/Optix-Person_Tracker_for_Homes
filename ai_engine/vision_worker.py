@@ -9,6 +9,8 @@ from datetime import datetime
 import cv2
 import threading
 
+from db.session import SessionLocal
+
 # ==========================================
 # ENVIRONMENT & SUPPRESSION SETUP
 # ==========================================
@@ -109,6 +111,74 @@ def disk_writer_thread(filename, fps, width, height, frame_queue):
     writer.release()
 
 
+from datetime import datetime
+
+def check_family_rule(db, user_id, person_id, person_name, camera_id, camera_name):
+    """
+    Evaluates monitoring rules using the new Junction Table structure.
+    Returns an alert payload if a rule is triggered, else None.
+    """
+    now_time = datetime.now().time()
+    current_timestamp = datetime.now().isoformat()
+
+    # Optimized Query: JOINs rules with the junction table to check camera access
+    query = text("""
+                 SELECT r.id, r.rule_name, r.from_time, r.to_time
+                 FROM monitoring_rules r
+                          JOIN monitoring_rule_cameras mrc ON r.id = mrc.rule_id
+                 WHERE r.user_id = :user_id
+                   AND r.person_id = :person_id
+                   AND r.is_active = true
+                   AND mrc.camera_id = :camera_id
+                 """)
+
+    result = db.execute(query, {
+        "user_id": str(user_id),
+        "person_id": str(person_id),
+        "camera_id": str(camera_id)
+    })
+
+    rules = result.mappings().all()
+
+    for rule in rules:
+        from_t = rule["from_time"]
+        to_t = rule["to_time"]
+        is_triggered = False
+
+        # 1. Check if it's an "All Day" rule (Both are NULL)
+        if from_t is None and to_t is None:
+            is_triggered = True
+        else:
+            # Handle string to time conversion if necessary
+            if isinstance(from_t, str):
+                from_t = datetime.strptime(from_t, "%H:%M:%S").time()
+            if isinstance(to_t, str):
+                to_t = datetime.strptime(to_t, "%H:%M:%S").time()
+
+            # 2. Match time window (Handling midnight wrap-around)
+            if from_t <= to_t:
+                is_triggered = from_t <= now_time <= to_t
+            else:
+                is_triggered = now_time >= from_t or now_time <= to_t
+
+        if is_triggered:
+            # We use the actual rule_name from the database now!
+            rule_label = rule["rule_name"]
+            print(f"🔔 [RULE MATCH] {person_name} triggered '{rule_label}' on {camera_name}")
+
+            return {
+                "type": "smart_alert",
+                "user_id": str(user_id),
+                "person_id": str(person_id),
+                "camera_id": str(camera_id),
+                "camera_name": camera_name,
+                "person_name": person_name,
+                "rule_name": rule_label,
+                "timestamp": current_timestamp
+            }
+
+    return None
+
 # ==========================================
 # MAIN CAMERA WORKER PROCESS
 # ==========================================
@@ -172,6 +242,7 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
         return
 
     # --- STATE VARIABLES: VIDEO RECORDING ---
+    event_start_time = None
     is_recording = False
     temp_filename = ""
     event_timestamp = ""
@@ -192,7 +263,7 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
     # --- STATE VARIABLES: SCENE OBJECTS ---
     TARGET_OBJECTS = {
         "backpack", "controller", "handbag", "headphones",
-        "keys", "laptop", "smartphone", "tablet", "wallet", "watch", "phone"
+        "keys", "laptop", "smartphone", "tablet", "wallet", "watch", "glasses"
     }
     scene_memory = {}  # Stores the location and status of static objects
     pending_object_events = []  # Objects picked up during the current event
@@ -229,6 +300,16 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
                         "person_name": current_match_name, "timestamp": current_time
                     })
                     alert_sent_this_event = True
+
+                elif det_type == "FAMILY" and not alert_sent_this_event:
+                    with SessionLocal() as db:
+                        alert_payload = check_family_rule(
+                            db, user_id, current_match_id, current_match_name, camera_id, camera_name
+                        )
+
+                    if alert_payload:
+                        alert_queue.put(alert_payload)
+                        alert_sent_this_event = True
             else:
                 # Intruder found: Generate a new profile on the fly
                 print(f"🚨 [{camera_name}] Unknown face! Generating new profile...")
@@ -308,8 +389,6 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
                 for box, cls, track_id in zip(boxes, classes, track_ids):
                     class_name = model.names[cls]
 
-                    if class_name == "phone": class_name = "smartphone"  # Normalize names
-
                     if class_name == "person" and track_id is not None:
                         person_in_frame = True
                         current_persons.append(box)
@@ -338,7 +417,8 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
                 person_visible_frames_count = 1
                 pending_object_events.clear()
 
-                event_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                event_start_time = datetime.now().astimezone()
+                event_timestamp = event_start_time.strftime("%Y%m%d_%H%M%S")
                 temp_filename = os.path.join(TEMP_DIR, f"temp_{camera_id}_{event_timestamp}.mp4")
 
                 h, w, _ = frame.shape
@@ -506,7 +586,7 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
                         continue
 
                     # Fallback Alert: They left, but we never saw their face!
-                    if not alert_sent_this_event:
+                    if not alert_sent_this_event and current_match_id is None:
                         print(f"⚠️ [{camera_name}] Person left frame without showing face. Sending alert!")
                         alert_queue.put({
                             "type": "alert",
@@ -544,7 +624,7 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
                     # Commit primary event to the database
                     event_id = log_event_start(
                         user_id=user_id, camera_id=camera_id, person_id=current_match_id,
-                        event_type=db_event_string, video_path=db_video_path
+                        event_type=db_event_string, video_path=db_video_path, detected_at= str(event_start_time)
                     )
 
                     # Commit any objects picked up during this event to the database

@@ -59,7 +59,7 @@ def add_camera(user_data: camera.Create_Camera, background_tasks: BackgroundTask
             :is_private,
             :floor_id
         )
-        RETURNING id, name, video_url
+        RETURNING id, name
     """)
 
     result = db.execute(query, {
@@ -74,13 +74,12 @@ def add_camera(user_data: camera.Create_Camera, background_tasks: BackgroundTask
 
     result = result.fetchone()
     db.commit()
-    background_tasks.add_task(camera_manager.sync_cameras())
+    background_tasks.add_task(camera_manager.sync_cameras)
 
     return {
         "message": "Camera Added successfully",
         "id": result[0],
-        "name": result[1],
-        "video_url": result[2]
+        "name": result[1]
     }
 
 @router.put("/camera/update")

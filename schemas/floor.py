@@ -34,12 +34,12 @@ class CreateFloorPlan(BaseModel):
 class UpdateFloorPlan(BaseModel):
     user_id: str
     username: str
-    floor_plan_id: str
+    floor_id: str
     jwt_token: str
     plan_data: Dict[str, Any]
 
 class GetFloorPlan(BaseModel):
     user_id: str
     username: str
-    floor_plan_id: str
+    floor_id: str
     jwt_token: str

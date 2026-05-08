@@ -21,7 +21,7 @@ class CameraOrchestrator:
         """Starts/Stops cameras based on the database."""
         db = SessionLocal()
         try:
-            db_cameras = db.execute(text("SELECT id, user_id, video_url, name FROM cameras")).fetchall()
+            db_cameras = db.execute(text("SELECT id, user_id, video_url, name, is_private FROM cameras")).fetchall()
             desired_state = {str(c.id): {"url": c.video_url, "user_id": str(c.user_id), "name": c.name} for c in
                              db_cameras}
 
@@ -43,7 +43,7 @@ class CameraOrchestrator:
 
                     p = multiprocessing.Process(
                         target=camera_worker_process,
-                        args=(cam_id, cam_data["name"], cam_data["url"], cam_data["user_id"], initial_user_cache,
+                        args=(cam_id, cam_data["name"], cam_data["url"], cam_data["user_id"], cam_data["is_private"], initial_user_cache,
                               self.alert_queue, cmd_queue),  # <-- 3. Use self.alert_queue here!
                         name=f"CamWorker-{cam_id[-4:]}"
                     )

@@ -39,7 +39,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 # Your App Routers
-from api import auth, cameras, dashboard, floor, family, unwanted_person, logs, settings
+from api import auth, cameras, dashboard, floor, family, unwanted_person, logs, settings, others, rules
 
 # Conditionally import your custom AI modules
 if ENABLE_AI_ENGINE:
@@ -128,6 +128,8 @@ app.include_router(family.router)
 app.include_router(unwanted_person.router)
 app.include_router(logs.router)
 app.include_router(settings.router)
+app.include_router(others.router)
+app.include_router(rules.router)
 
 app.mount("/media", StaticFiles(directory="media"), name="media")
 app.mount("/editor", StaticFiles(directory="static", html=True), name="editor")

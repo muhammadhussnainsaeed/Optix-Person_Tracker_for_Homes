@@ -274,7 +274,7 @@ COLORS = ["Teal", "Azure", "Crimson", "Cobalt", "Amber", "Jade", "Onyx", "Ruby",
 ANIMALS = ["Falcon", "Panda", "Wolf", "Tiger", "Bear", "Eagle", "Fox", "Hawk", "Panther", "Leopard"]
 
 
-@router.post("/api/events/correction")
+@router.post("/logs/correction")
 def correct_event_identity(
         payload: logs.IdentityCorrectionRequest,
         db: Session = Depends(session.get_db)

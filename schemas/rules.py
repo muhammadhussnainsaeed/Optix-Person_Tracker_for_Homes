@@ -13,7 +13,7 @@ class MonitoringRuleCreateRequest(BaseModel):
     camera_ids: List[str]
     from_time: Optional[str] = None  # Frontend sends "22:00:00" string, Pydantic converts to time object
     to_time: Optional[str] = None
-    is_active: bool = True
+    is_active: bool
 
 
 # Input for Delete Operation
@@ -30,7 +30,7 @@ class MonitoringRuleUpdateRequest(BaseModel):
     user_id: str
     rule_id: str
     rule_name: str
-    camera_id: List[str] = None
+    camera_ids: List[str] = None
     person_id: str
     from_time: Optional[str] = None
     to_time: Optional[str] = None

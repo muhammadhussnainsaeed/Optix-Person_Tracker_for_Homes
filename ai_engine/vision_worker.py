@@ -9,6 +9,8 @@ from datetime import datetime
 import cv2
 import threading
 
+from sqlalchemy import text
+
 from db.session import SessionLocal
 
 # ==========================================
@@ -182,7 +184,7 @@ def check_family_rule(db, user_id, person_id, person_name, camera_id, camera_nam
 # ==========================================
 # MAIN CAMERA WORKER PROCESS
 # ==========================================
-def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user_id: str, user_cache: dict,
+def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user_id: str, is_private: bool, user_cache: dict,
                           alert_queue, command_queue):
     print(f"📹 [{camera_name}] Process started. Verifying connection...")
 
@@ -620,6 +622,9 @@ def camera_worker_process(camera_id: str, camera_name: str, video_url: str, user
 
                     # Determine string identifier for PostgreSQL
                     db_event_string = f"{current_match_type.lower()}_detected"
+
+                    if is_private:
+                        db_video_path = ""
 
                     # Commit primary event to the database
                     event_id = log_event_start(

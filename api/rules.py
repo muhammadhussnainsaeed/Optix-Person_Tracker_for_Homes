@@ -34,6 +34,7 @@ def fetch_monitoring_rules_full(
             mr.from_time,
             mr.to_time,
             mr.is_active,
+            p.id AS person_id,
             p.name AS person_name,
             -- Subquery for primary avatar photo
             (
@@ -245,8 +246,7 @@ def toggle_monitoring_rule(user_data: rules.MonitoringRuleToggleRequest, db: Ses
     # 3. Clean success response
     return {
         "message": f"Monitoring Rule status updated successfully to {'active' if user_data.is_active else 'inactive'}",
-        "rule_id": str(user_data.rule_id),
-        "is_active": user_data.is_active
+        "rule_id": str(user_data.rule_id)
     }
 
 @router.get("/rules/cameras")
@@ -281,7 +281,7 @@ def fetch_rule_and_available_cameras(
     try:
         # 3. Fetch cameras that ARE linked to this specific rule
         linked_cameras_sql = text("""
-            SELECT c.id, c.name
+            SELECT c.id AS camera_id, c.name AS camera_name
             FROM cameras c
             JOIN pgadmin_recover mrc ON c.id = mrc.camera_id
             WHERE mrc.rule_id = :rule_id;
@@ -291,7 +291,7 @@ def fetch_rule_and_available_cameras(
 
         # 4. Fetch cameras that ARE NOT linked to this rule but belong to the user
         unlinked_cameras_sql = text("""
-            SELECT c.id, c.name
+            SELECT c.id AS camera_id, c.name camera_name
             FROM cameras c
             WHERE c.user_id = :user_id
               AND c.id NOT IN (

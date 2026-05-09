@@ -22,7 +22,7 @@ class CameraOrchestrator:
         db = SessionLocal()
         try:
             db_cameras = db.execute(text("SELECT id, user_id, video_url, name, is_private FROM cameras")).fetchall()
-            desired_state = {str(c.id): {"url": c.video_url, "user_id": str(c.user_id), "name": c.name} for c in
+            desired_state = {str(c.id): {"url": c.video_url, "user_id": str(c.user_id), "name": c.name, "is_private": c.is_private} for c in
                              db_cameras}
 
             # 1. Kill old/changed cameras

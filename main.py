@@ -6,7 +6,7 @@ import warnings
 # ==========================================
 # Set to False to bypass TensorFlow and AI Engine for instant API startup.
 # In a real environment, prefer using os.getenv("ENABLE_AI_ENGINE", "True") == "True"
-ENABLE_AI_ENGINE = False
+ENABLE_AI_ENGINE = True
 
 # ==========================================
 # 1. SUPPRESS TENSORFLOW & DEPRECATION NOISE
